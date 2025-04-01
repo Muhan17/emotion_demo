@@ -3,6 +3,6 @@ streamlit-webrtc
 torch
 torchvision
 Pillow
-opencv-python
+opencv-python-headless
 gdown
 matplotlib
