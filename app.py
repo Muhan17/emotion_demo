@@ -1,22 +1,28 @@
 import streamlit as st
-st.set_page_config(page_title="Emotion Recognition", layout="centered")  # ✅ Обязательно первым
+st.set_page_config(page_title="Real-time Emotion Recognition", layout="centered")
 
+import cv2
 import torch
 import torch.nn as nn
+import numpy as np
 from torchvision import transforms, models
-from PIL import Image, ImageOps
+from PIL import Image
+from collections import Counter
+from streamlit_webrtc import webrtc_streamer, VideoProcessorBase
+import av
 import gdown
 import os
+import matplotlib.pyplot as plt
 
-# === Настройки ===
-MODEL_PATH = "best_emotion_model_gray48.pth"
-FILE_ID = "1h6OZWxlWDr_IDzlb4LucQzWV56kSqgza"  # 👈 Твой Google Drive файл ID
+# ==== Константы ====
+MODEL_PATH = "best_emotion_model_gray48_1.pth"
+FILE_ID = "1h6OZWxlWDr_IDzlb4LucQzWV56kSqgza"
 DOWNLOAD_URL = f"https://drive.google.com/uc?id={FILE_ID}"
-
 class_names = ['angry', 'fear', 'happy', 'neutral', 'sad', 'surprise']
 positive_emotions = ['happy', 'neutral', 'surprise']
+emotion_log = []
 
-# === Загрузка модели с Google Drive ===
+# ==== Загрузка модели ====
 @st.cache_resource
 def load_model():
     if not os.path.exists(MODEL_PATH):
@@ -32,7 +38,7 @@ def load_model():
 
 model = load_model()
 
-# === Преобразование изображения ===
+# ==== Преобразование ====
 transform = transforms.Compose([
     transforms.Resize((48, 48)),
     transforms.Grayscale(num_output_channels=1),
@@ -40,25 +46,64 @@ transform = transforms.Compose([
     transforms.Normalize([0.5], [0.5])
 ])
 
-# === Интерфейс ===
-st.title("🎭 Emotion Recognition (Grayscale ResNet18)")
+face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
 
-uploaded_file = st.file_uploader("📤 Загрузите изображение (лицо)", type=["jpg", "jpeg", "png"])
+# ==== Обработчик видео ====
+class EmotionProcessor(VideoProcessorBase):
+    def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
+        img = frame.to_ndarray(format="bgr24")
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        faces = face_cascade.detectMultiScale(gray, 1.3, 5)
 
-if uploaded_file is not None:
-    image = Image.open(uploaded_file).convert("RGB")
-    st.image(image, caption="Загруженное изображение", use_column_width=True)
+        for (x, y, w, h) in faces:
+            face_img = gray[y:y+h, x:x+w]
+            face_pil = Image.fromarray(face_img).convert("L")
+            input_tensor = transform(face_pil).unsqueeze(0)
 
-    gray = ImageOps.grayscale(image)
-    input_tensor = transform(gray).unsqueeze(0)
+            with torch.no_grad():
+                output = model(input_tensor)
+                _, pred = torch.max(output, 1)
+                predicted_emotion = class_names[pred.item()]
+                emotion_log.append(predicted_emotion)
 
-    with torch.no_grad():
-        output = model(input_tensor)
-        _, pred = torch.max(output, 1)
-        predicted_emotion = class_names[pred.item()]
+            # Отрисовка
+            color = (0, 255, 0) if predicted_emotion in positive_emotions else (0, 0, 255)
+            cv2.rectangle(img, (x, y), (x+w, y+h), color, 2)
+            cv2.putText(img, predicted_emotion, (x, y-10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
 
-    st.markdown(f"### 🧠 Эмоция: **{predicted_emotion.upper()}**")
-    if predicted_emotion in positive_emotions:
-        st.success("✅ Клиент удовлетворён")
+        return av.VideoFrame.from_ndarray(img, format="bgr24")
+
+# ==== Интерфейс ====
+st.title("🎥 Emotion Recognition with Camera")
+st.markdown("Включите камеру и наблюдайте за распознаванием эмоций в реальном времени.")
+
+# Камера
+ctx = webrtc_streamer(key="emotion", video_processor_factory=EmotionProcessor)
+
+# Статистика
+if st.button("📊 Показать статистику"):
+    if not emotion_log:
+        st.warning("Нет распознанных эмоций — включите камеру и подождите.")
     else:
-        st.error("❌ Клиент не удовлетворён")
+        stats = Counter(emotion_log)
+        st.markdown("### 📈 Эмоции за сессию:")
+        total = sum(stats.values())
+        for emo, count in stats.items():
+            percent = (count / total) * 100
+            st.write(f"**{emo}** — {count} раз ({percent:.1f}%)")
+
+        # График
+        fig, ax = plt.subplots()
+        ax.bar(stats.keys(), stats.values(), color='skyblue')
+        ax.set_title("Распределение эмоций")
+        st.pyplot(fig)
+
+        # Вердикт
+        pos_total = sum(stats[e] for e in positive_emotions)
+        ratio = pos_total / total
+        st.markdown("### 🧾 Итог:")
+        if ratio >= 0.5:
+            st.success("✅ Клиент удовлетворён")
+        else:
+            st.error("❌ Клиент не удовлетворён")
