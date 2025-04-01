@@ -1,4 +1,6 @@
 import streamlit as st
+st.set_page_config(page_title="Emotion Recognition", layout="centered")  # ✅ Обязательно первым
+
 import torch
 import torch.nn as nn
 from torchvision import transforms, models
@@ -7,8 +9,8 @@ import gdown
 import os
 
 # === Настройки ===
-MODEL_PATH = "best_emotion_model_gray48_1.pth"
-FILE_ID = "1h6OZWxlWDr_IDzlb4LucQzWV56kSqgza"  # <--- сюда вставь свой Google Drive ID
+MODEL_PATH = "best_emotion_model_gray48.pth"
+FILE_ID = "1h6OZWxlWDr_IDzlb4LucQzWV56kSqgza"  # 👈 Твой Google Drive файл ID
 DOWNLOAD_URL = f"https://drive.google.com/uc?id={FILE_ID}"
 
 class_names = ['angry', 'fear', 'happy', 'neutral', 'sad', 'surprise']
@@ -39,7 +41,6 @@ transform = transforms.Compose([
 ])
 
 # === Интерфейс ===
-st.set_page_config(page_title="Emotion Recognition", layout="centered")
 st.title("🎭 Emotion Recognition (Grayscale ResNet18)")
 
 uploaded_file = st.file_uploader("📤 Загрузите изображение (лицо)", type=["jpg", "jpeg", "png"])
