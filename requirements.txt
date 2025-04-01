@@ -2,7 +2,7 @@ streamlit
 streamlit-webrtc
 torch
 torchvision
-opencv-python
 Pillow
-matplotlib
+opencv-python
 gdown
+matplotlib
